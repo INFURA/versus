@@ -1,2 +1,4 @@
 # versus
-Benchmark multiple API endpoints against each other
+
+versus takes a stream of requests and runs them against N endpoints
+simultaneously, comparing the output and timing.
