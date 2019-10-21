@@ -6,13 +6,16 @@ import (
 	"time"
 )
 
-func NewClient(endpoint string) (*Client, error) {
+const chanBuffer = 20
+
+func NewClient(endpoint string, concurrency int) (*Client, error) {
 	t, err := NewTransport(endpoint)
 	if err != nil {
 		return nil, err
 	}
 	return &Client{
-		Endpoint: endpoint,
+		Endpoint:    endpoint,
+		Concurrency: concurrency,
 
 		t:   t,
 		in:  make(chan Request, chanBuffer),

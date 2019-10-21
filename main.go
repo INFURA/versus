@@ -12,12 +12,11 @@ import (
 	flags "github.com/jessevdk/go-flags"
 )
 
-const chanBuffer = 20
-
 // Options contains the flag options
 type Options struct {
-	Endpoints []string `positional-args:"yes"`
-	Duration  string   `long:"duration" description:"Stop after some duration."`
+	Endpoints   []string `positional-args:"yes"`
+	Duration    string   `long:"duration" description:"Stop after duration (example: 60s)"`
+	Concurrency int      `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
 }
 
 func exit(code int, format string, args ...interface{}) {
@@ -59,7 +58,7 @@ func main() {
 	// Launch clients
 	clients := make(Clients, 0, len(options.Endpoints))
 	for _, endpoint := range options.Endpoints {
-		c, err := NewClient(endpoint)
+		c, err := NewClient(endpoint, options.Concurrency)
 		if err != nil {
 			exit(2, "failed to create client: %s", err)
 		}
