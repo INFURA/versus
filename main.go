@@ -4,19 +4,26 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"os/signal"
 	"time"
 
 	flags "github.com/jessevdk/go-flags"
+	"golang.org/x/sync/errgroup"
 )
+
+// Version of the binary, assigned during build.
+var Version string = "dev"
 
 // Options contains the flag options
 type Options struct {
 	Endpoints   []string `positional-args:"yes"`
 	Duration    string   `long:"duration" description:"Stop after duration (example: 60s)"`
+	Requests    int      `long:"requests" description:"Stop after N requests per endpoint"`
 	Concurrency int      `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
+
+	Version bool `long:"version" description:"Print version and exit."`
 }
 
 func exit(code int, format string, args ...interface{}) {
@@ -32,6 +39,11 @@ func main() {
 			fmt.Println(err)
 		}
 		return
+	}
+
+	if options.Version {
+		fmt.Println(Version)
+		os.Exit(0)
 	}
 
 	// Setup signals
@@ -50,42 +62,63 @@ func main() {
 		if err != nil {
 			exit(1, "failed to parse duration: %s", err)
 		}
-		timeoutCtx, cancel := context.WithTimeout(ctx, d)
-		defer cancel()
-		ctx = timeoutCtx
+		if d > 0 {
+			timeoutCtx, cancel := context.WithTimeout(ctx, d)
+			defer cancel()
+			ctx = timeoutCtx
+		}
 	}
 
+	v := versus{options.Endpoints, options.Concurrency}
+	if err := v.Serve(ctx, os.Stdin); err != nil {
+		exit(2, "failed to start versus: %s", err)
+	}
+}
+
+// versus is a main helper for launching the process that is testable.
+type versus struct {
+	Endpoints   []string
+	Concurrency int
+}
+
+func (v *versus) Serve(ctx context.Context, r io.Reader) error {
 	// Launch clients
-	clients := make(Clients, 0, len(options.Endpoints))
-	for _, endpoint := range options.Endpoints {
-		c, err := NewClient(endpoint, options.Concurrency)
+	clients := make(Clients, 0, len(v.Endpoints))
+	for _, endpoint := range v.Endpoints {
+		c, err := NewClient(endpoint, v.Concurrency)
 		if err != nil {
-			exit(2, "failed to create client: %s", err)
+			return err
 		}
-		go func() {
-			if err := c.Serve(ctx); err != nil {
-				exit(2, "failed to start client: %s", err)
-			}
-		}()
 		clients = append(clients, *c)
 	}
 
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		if err := clients.Send(scanner.Bytes()); err != nil {
-			log.Print(err)
-			return
-		}
+	// Separate loop just to avoid leaking goroutines if NewClient fails
+	g, ctx := errgroup.WithContext(ctx)
+	for _, c := range clients {
+		g.Go(func() error {
+			return c.Serve(ctx)
+		})
 	}
 
-	if err := scanner.Err(); err != nil {
-		log.Print(err)
-		return
-	}
+	g.Go(func() error {
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
+			if err := clients.Send(scanner.Bytes()); err != nil {
+				return err
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			return err
+		}
+		return nil
+	})
+
+	return g.Wait()
 }
