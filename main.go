@@ -22,6 +22,7 @@ type Options struct {
 	Duration    string   `long:"duration" description:"Stop after duration (example: 60s)"`
 	Requests    int      `long:"requests" description:"Stop after N requests per endpoint"`
 	Concurrency int      `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
+	Source      string   `long:"source" description:"Where to get requests from (options: stdin-jsons, ethspam)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
 
 	Version bool `long:"version" description:"Print version and exit."`
 }
@@ -109,7 +110,12 @@ func (v *versus) Serve(ctx context.Context, r io.Reader) error {
 			default:
 			}
 
-			if err := clients.Send(scanner.Bytes()); err != nil {
+			line := scanner.Bytes()
+			if line == "" { // Done
+				return nil
+			}
+
+			if err := clients.Send(line); err != nil {
 				return err
 			}
 		}
