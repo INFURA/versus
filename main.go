@@ -70,61 +70,60 @@ func main() {
 		}
 	}
 
-	v := versus{options.Endpoints, options.Concurrency}
-	if err := v.Serve(ctx, os.Stdin); err != nil {
-		exit(2, "failed to start versus: %s", err)
-	}
-}
-
-// versus is a main helper for launching the process that is testable.
-type versus struct {
-	Endpoints   []string
-	Concurrency int
-}
-
-func (v *versus) Serve(ctx context.Context, r io.Reader) error {
-	// Launch clients
-	clients := make(Clients, 0, len(v.Endpoints))
-	for _, endpoint := range v.Endpoints {
-		c, err := NewClient(endpoint, v.Concurrency)
-		if err != nil {
-			return err
-		}
-		clients = append(clients, *c)
-	}
-
-	// Separate loop just to avoid leaking goroutines if NewClient fails
 	g, ctx := errgroup.WithContext(ctx)
-	for _, c := range clients {
+
+	// Launch clients
+	clients := make(Clients, 0, len(options.Endpoints))
+	for _, endpoint := range options.Endpoints {
+		c := Client{
+			Endpoint:    endpoint,
+			Concurrency: options.Concurrency,
+			In:          make(chan Request, chanBuffer),
+		}
+		clients = append(clients, c)
 		g.Go(func() error {
 			return c.Serve(ctx)
 		})
 	}
 
 	g.Go(func() error {
-		scanner := bufio.NewScanner(r)
-		for scanner.Scan() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			default:
-			}
-
-			line := scanner.Bytes()
-			if line == "" { // Done
-				return nil
-			}
-
-			if err := clients.Send(line); err != nil {
-				return err
-			}
-		}
-
-		if err := scanner.Err(); err != nil {
-			return err
-		}
-		return nil
+		return pump(ctx, os.Stdin, clients)
 	})
 
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		exit(3, "failed: %s", err)
+	}
+
+	// TODO: Combine reports
+	finalReport := report{}
+	for _, client := range clients {
+		client.Report.MergeInto(&finalReport)
+	}
+	fmt.Println(finalReport)
+}
+
+// pump takes lines from a reader and pumps them into the clients
+func pump(ctx context.Context, r io.Reader, c Clients) error {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		line := scanner.Bytes()
+		if len(line) == 0 { // Done
+			return nil
+		}
+
+		if err := c.Send(line); err != nil {
+			return err
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return nil
 }

@@ -16,3 +16,14 @@ func (r *report) Add(err error, elapsed time.Duration) {
 	}
 	r.timeTotal += elapsed
 }
+
+func (r *report) MergeInto(into *report) *report {
+	if into == nil {
+		into = &report{}
+	}
+
+	into.numTotal += r.numTotal
+	into.numErrors += r.numErrors
+	into.timeTotal += r.timeTotal
+	return into
+}

@@ -15,12 +15,12 @@ type Request struct {
 	Timestamp time.Time
 }
 
-func (req *Request) Do() {
-	body, err := req.client.t.Send(req.Line)
-	resp := Response{
-		req.client, body, err, time.Now().Sub(req.Timestamp),
+func (req *Request) Do(t Transport) Response {
+	timeStarted := time.Now()
+	body, err := t.Send(req.Line)
+	return Response{
+		req.client, body, err, time.Now().Sub(timeStarted),
 	}
-	req.client.out <- resp
 }
 
 type Response struct {

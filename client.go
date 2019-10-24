@@ -2,53 +2,31 @@ package main
 
 import (
 	"context"
-	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 const chanBuffer = 20
 
-func NewClient(endpoint string, concurrency int) (*Client, error) {
-	t, err := NewTransport(endpoint)
-	if err != nil {
-		return nil, err
-	}
-	return &Client{
-		Endpoint:    endpoint,
-		Concurrency: concurrency,
-
-		t:   t,
-		in:  make(chan Request, chanBuffer),
-		out: make(chan Response, chanBuffer),
-	}, nil
-}
-
 type Client struct {
 	Endpoint    string
 	Concurrency int // Number of goroutines to make requests with. Must be >=1.
-
-	t      Transport
-	in     chan Request
-	out    chan Response
-	report report
+	In          chan Request
+	Report      report
 }
 
 // Serve starts the async request and response goroutine consumers.
 func (client *Client) Serve(ctx context.Context) error {
-	wg := sync.WaitGroup{}
+	respCh := make(chan Response, chanBuffer)
+
+	g, ctx := errgroup.WithContext(ctx)
 
 	go func() {
 		// Consume responses
-		wg.Add(1)
-		defer wg.Done()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case resp := <-client.out:
-				client.report.Add(resp.Err, resp.Elapsed)
-			}
+		rep := report{}
+		for resp := range respCh {
+			rep.Add(resp.Err, resp.Elapsed)
 		}
 	}()
 
@@ -57,24 +35,26 @@ func (client *Client) Serve(ctx context.Context) error {
 	}
 
 	for i := 0; i < client.Concurrency; i++ {
-		go func() {
+		g.Go(func() error {
 			// Consume requests
-			wg.Add(1)
-			defer wg.Done()
-
+			t, err := NewTransport(client.Endpoint)
+			if err != nil {
+				return err
+			}
 			for {
 				select {
 				case <-ctx.Done():
-					return
-				case req := <-client.in:
-					req.Do()
+					return ctx.Err()
+				case req := <-client.In:
+					respCh <- req.Do(t)
 				}
 			}
-		}()
+		})
 	}
 
-	wg.Wait()
-	return nil
+	err := g.Wait()
+	close(respCh)
+	return err
 }
 
 var id int
@@ -84,7 +64,7 @@ type Clients []Client
 func (c Clients) Send(line []byte) error {
 	id += 1
 	for _, client := range c {
-		client.in <- Request{
+		client.In <- Request{
 			client: &client,
 			id:     id,
 
