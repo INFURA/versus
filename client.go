@@ -34,13 +34,19 @@ type Client struct {
 // Serve starts the async request and response goroutine consumers.
 func (client *Client) Serve(ctx context.Context) error {
 	respCh := make(chan Response, chanBuffer)
+	defer close(respCh)
 
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		for resp := range respCh {
-			client.Stats.Add(resp.Err, resp.Elapsed)
-			// TODO: Relay response to client.Out
+		for {
+			select {
+			case resp := <-respCh:
+				client.Stats.Add(resp.Err, resp.Elapsed)
+				// TODO: Relay response to client.Out
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		return nil
 	})
@@ -59,7 +65,8 @@ func (client *Client) Serve(ctx context.Context) error {
 			for {
 				select {
 				case <-ctx.Done():
-					return ctx.Err()
+					logger.Debug().Str("endpoint", client.Endpoint).Msg("shutting down client")
+					return nil
 				case req := <-client.In:
 					respCh <- req.Do(t)
 				}
@@ -67,10 +74,7 @@ func (client *Client) Serve(ctx context.Context) error {
 		})
 	}
 
-	err := g.Wait()
-
-	close(respCh)
-	return err
+	return g.Wait()
 }
 
 var id int
