@@ -3,9 +3,8 @@ package main
 import "time"
 
 type report struct {
-	numTotal  int // Number of requests
-	numErrors int // Number of errors
-
+	numTotal  int           // Number of requests
+	numErrors int           // Number of errors
 	timeTotal time.Duration // Total duration of requests
 }
 
@@ -26,4 +25,12 @@ func (r *report) MergeInto(into *report) *report {
 	into.numErrors += r.numErrors
 	into.timeTotal += r.timeTotal
 	return into
+}
+
+// TODO: Need a separate service to compare returned bodies
+func (r *report) Serve(out <-chan Response) error {
+	for resp := range out {
+		r.Add(resp.Err, resp.Elapsed)
+	}
+	return nil
 }

@@ -7,13 +7,28 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type clientStats struct {
+	NumTotal  int           // Number of requests
+	NumErrors int           // Number of errors
+	TimeTotal time.Duration // Total duration of requests
+}
+
+func (stats *clientStats) Add(err error, elapsed time.Duration) {
+	stats.NumTotal += 1
+	if err != nil {
+		stats.NumErrors += 1
+	}
+	stats.TimeTotal += elapsed
+}
+
 const chanBuffer = 20
 
 type Client struct {
 	Endpoint    string
 	Concurrency int // Number of goroutines to make requests with. Must be >=1.
 	In          chan Request
-	Report      report
+	Out         chan Response
+	Stats       clientStats
 }
 
 // Serve starts the async request and response goroutine consumers.
@@ -22,13 +37,13 @@ func (client *Client) Serve(ctx context.Context) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	go func() {
-		// Consume responses
-		rep := report{}
+	g.Go(func() error {
 		for resp := range respCh {
-			rep.Add(resp.Err, resp.Elapsed)
+			client.Stats.Add(resp.Err, resp.Elapsed)
+			// TODO: Relay response to client.Out
 		}
-	}()
+		return nil
+	})
 
 	if client.Concurrency < 1 {
 		client.Concurrency = 1
@@ -53,6 +68,7 @@ func (client *Client) Serve(ctx context.Context) error {
 	}
 
 	err := g.Wait()
+
 	close(respCh)
 	return err
 }

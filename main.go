@@ -79,6 +79,7 @@ func main() {
 			Endpoint:    endpoint,
 			Concurrency: options.Concurrency,
 			In:          make(chan Request, chanBuffer),
+			Out:         make(chan Response, chanBuffer),
 		}
 		clients = append(clients, c)
 		g.Go(func() error {
@@ -94,12 +95,10 @@ func main() {
 		exit(3, "failed: %s", err)
 	}
 
-	// TODO: Combine reports
-	finalReport := report{}
+	// TODO: Make a report
 	for _, client := range clients {
-		client.Report.MergeInto(&finalReport)
+		fmt.Println(client.Stats)
 	}
-	fmt.Println(finalReport)
 }
 
 // pump takes lines from a reader and pumps them into the clients
