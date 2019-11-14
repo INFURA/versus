@@ -10,6 +10,7 @@ import (
 	"time"
 
 	flags "github.com/jessevdk/go-flags"
+	"github.com/rs/zerolog"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -18,13 +19,16 @@ var Version string = "dev"
 
 // Options contains the flag options
 type Options struct {
-	Endpoints   []string `positional-args:"yes"`
-	Duration    string   `long:"duration" description:"Stop after duration (example: 60s)"`
-	Requests    int      `long:"requests" description:"Stop after N requests per endpoint"`
-	Concurrency int      `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
-	Source      string   `long:"source" description:"Where to get requests from (options: stdin-jsons, ethspam)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
+	Args struct {
+		Endpoints []string `positional-arg-name:"endpoint" description:"API endpoint to load test, such as \"http://localhost:8080/\""`
+	} `positional-args:"yes"`
+	Duration    string `long:"duration" description:"Stop after duration (example: 60s)"`
+	Requests    int    `long:"requests" description:"Stop after N requests per endpoint"`
+	Concurrency int    `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
+	Source      string `long:"source" description:"Where to get requests from (options: stdin-jsons, ethspam)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
 
-	Version bool `long:"version" description:"Print version and exit."`
+	Verbose []bool `long:"verbose" short:"v" description:"Show verbose logging."`
+	Version bool   `long:"version" description:"Print version and exit."`
 }
 
 func exit(code int, format string, args ...interface{}) {
@@ -47,21 +51,36 @@ func main() {
 		os.Exit(0)
 	}
 
+	if len(options.Args.Endpoints) == 0 {
+		exit(1, "must specify at least one endpoint\n")
+	}
+
+	switch len(options.Verbose) {
+	case 0:
+		logger = logger.Level(zerolog.WarnLevel)
+	case 1:
+		logger = logger.Level(zerolog.InfoLevel)
+	default:
+		logger = logger.Level(zerolog.DebugLevel)
+	}
+
 	// Setup signals
 	ctx, abort := context.WithCancel(context.Background())
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt)
 	go func(abort context.CancelFunc) {
 		<-sigCh
+		logger.Warn().Msg("interrupt received, shutting down")
 		abort()
 		<-sigCh
+		logger.Error().Msg("second interrupt received, panicking")
 		panic("aborted")
 	}(abort)
 
 	if options.Duration != "" {
 		d, err := time.ParseDuration(options.Duration)
 		if err != nil {
-			exit(1, "failed to parse duration: %s", err)
+			exit(1, "failed to parse duration: %s\n", err)
 		}
 		if d > 0 {
 			timeoutCtx, cancel := context.WithTimeout(ctx, d)
@@ -73,8 +92,8 @@ func main() {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Launch clients
-	clients := make(Clients, 0, len(options.Endpoints))
-	for _, endpoint := range options.Endpoints {
+	clients := make(Clients, 0, len(options.Args.Endpoints))
+	for _, endpoint := range options.Args.Endpoints {
 		c := Client{
 			Endpoint:    endpoint,
 			Concurrency: options.Concurrency,
@@ -86,6 +105,8 @@ func main() {
 			return c.Serve(ctx)
 		})
 	}
+
+	logger.Info().Int("clients", len(clients)).Msg("started endpoint clients, pumping stdin")
 
 	g.Go(func() error {
 		return pump(ctx, os.Stdin, clients)

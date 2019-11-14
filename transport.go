@@ -21,6 +21,8 @@ func NewTransport(endpoint string) (Transport, error) {
 	case "ws", "wss":
 		// TODO: Implement
 		return &websocketTransport{}, nil
+	case "noop":
+		return &noopTransport{}, nil
 	}
 	return nil, fmt.Errorf("unsupported transport: %s", url.Scheme)
 }
@@ -50,4 +52,10 @@ type websocketTransport struct {
 
 func (t *websocketTransport) Send(body []byte) ([]byte, error) {
 	return nil, errors.New("websocketTransport: not implemented")
+}
+
+type noopTransport struct{}
+
+func (t *noopTransport) Send(body []byte) ([]byte, error) {
+	return nil, nil
 }
