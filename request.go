@@ -7,10 +7,12 @@ import (
 	"time"
 )
 
+type requestID int
+
 type Request struct {
 	client *Client
-	id     int
 
+	ID        requestID
 	Line      []byte
 	Timestamp time.Time
 }
@@ -19,13 +21,22 @@ func (req *Request) Do(t Transport) Response {
 	timeStarted := time.Now()
 	body, err := t.Send(req.Line)
 	return Response{
-		req.client, body, err, time.Now().Sub(timeStarted),
+		client: req.client,
+
+		Request: req,
+		ID:      req.ID,
+		Body:    body,
+		Err:     err,
+
+		Elapsed: time.Now().Sub(timeStarted),
 	}
 }
 
 type Response struct {
-	client *Client
+	client  *Client
+	Request *Request
 
+	ID   requestID
 	Body []byte
 	Err  error
 

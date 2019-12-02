@@ -13,7 +13,7 @@ type clientStats struct {
 	TimeTotal time.Duration // Total duration of requests
 }
 
-func (stats *clientStats) Add(err error, elapsed time.Duration) {
+func (stats *clientStats) Count(err error, elapsed time.Duration) {
 	stats.NumTotal += 1
 	if err != nil {
 		stats.NumErrors += 1
@@ -42,13 +42,12 @@ func (client *Client) Serve(ctx context.Context) error {
 		for {
 			select {
 			case resp := <-respCh:
-				client.Stats.Add(resp.Err, resp.Elapsed)
-				// TODO: Relay response to client.Out
+				client.Stats.Count(resp.Err, resp.Elapsed)
+				client.Out <- resp // TODO: Detect full chan
 			case <-ctx.Done():
 				return ctx.Err()
 			}
 		}
-		return nil
 	})
 
 	if client.Concurrency < 1 {
@@ -77,7 +76,7 @@ func (client *Client) Serve(ctx context.Context) error {
 	return g.Wait()
 }
 
-var id int
+var id requestID
 
 type Clients []Client
 
@@ -86,7 +85,7 @@ func (c Clients) Send(line []byte) error {
 	for _, client := range c {
 		client.In <- Request{
 			client: &client,
-			id:     id,
+			ID:     id,
 
 			Line:      line,
 			Timestamp: time.Now(),
