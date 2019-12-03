@@ -23,12 +23,38 @@ func (stats *clientStats) Count(err error, elapsed time.Duration) {
 
 const chanBuffer = 20
 
+func NewClient(endpoint string, concurrency int) (*Client, error) {
+	c := Client{
+		Endpoint:    endpoint,
+		Concurrency: concurrency,
+		In:          make(chan Request, chanBuffer),
+	}
+	return &c, nil
+}
+
+func NewClients(endpoints []string, concurrency int) (Clients, error) {
+	clients := make(Clients, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		c, err := NewClient(endpoint, concurrency)
+		if err != nil {
+			return nil, err
+		}
+		clients = append(clients, *c)
+	}
+	return clients, nil
+}
+
 type Client struct {
 	Endpoint    string
 	Concurrency int // Number of goroutines to make requests with. Must be >=1.
 	In          chan Request
-	Out         chan Response
 	Stats       clientStats
+
+	ResponseHandler func(Response)
+}
+
+func (client *Client) Handle(req Request) {
+	client.In <- req
 }
 
 // Serve starts the async request and response goroutine consumers.
@@ -43,7 +69,9 @@ func (client *Client) Serve(ctx context.Context) error {
 			select {
 			case resp := <-respCh:
 				client.Stats.Count(resp.Err, resp.Elapsed)
-				client.Out <- resp // TODO: Detect full chan
+				if client.ResponseHandler != nil {
+					client.ResponseHandler(resp)
+				}
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -92,4 +120,16 @@ func (c Clients) Send(line []byte) error {
 		}
 	}
 	return nil
+}
+
+func (clients Clients) Serve(ctx context.Context) error {
+	g, ctx := errgroup.WithContext(ctx)
+
+	for _, c := range clients {
+		g.Go(func() error {
+			return c.Serve(ctx)
+		})
+	}
+
+	return g.Wait()
 }

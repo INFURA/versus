@@ -44,7 +44,13 @@ type Response struct {
 }
 
 func (r *Response) Equal(other Response) bool {
-	return r.Err.Error() == other.Err.Error() && bytes.Equal(r.Body, other.Body)
+	if r.Err == nil && other.Err == nil {
+		return bytes.Equal(r.Body, other.Body)
+	}
+	if r.Err != nil && other.Err != nil {
+		return r.Err.Error() == other.Err.Error() && bytes.Equal(r.Body, other.Body)
+	}
+	return false
 }
 
 type Responses []Response

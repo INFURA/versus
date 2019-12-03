@@ -92,19 +92,19 @@ func main() {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Launch clients
-	clients := make(Clients, 0, len(options.Args.Endpoints))
-	for _, endpoint := range options.Args.Endpoints {
-		c := Client{
-			Endpoint:    endpoint,
-			Concurrency: options.Concurrency,
-			In:          make(chan Request, chanBuffer),
-			Out:         make(chan Response, chanBuffer),
-		}
-		clients = append(clients, c)
-		g.Go(func() error {
-			return c.Serve(ctx)
-		})
+	clients, err := NewClients(options.Args.Endpoints, options.Concurrency)
+	if err != nil {
+		exit(3, "failed to create clients: %s", err)
 	}
+
+	r, err := Report(clients)
+	if err != nil {
+		exit(3, "failed to create report: %s", err)
+	}
+
+	g.Go(func() error {
+		return clients.Serve(ctx)
+	})
 
 	logger.Info().Int("clients", len(clients)).Msg("started endpoint clients, pumping stdin")
 
@@ -120,6 +120,8 @@ func main() {
 	for _, client := range clients {
 		fmt.Println(client.Stats)
 	}
+
+	fmt.Println(r)
 }
 
 // pump takes lines from a reader and pumps them into the clients

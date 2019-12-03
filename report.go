@@ -1,17 +1,57 @@
 package main
 
-import "time"
+import (
+	"context"
+	"errors"
+	"time"
+)
 
 type report struct {
 	clients          Clients
 	pendingResponses map[requestID][]Response
+	respCh           chan Response
 
-	requests   int           // Number of requests
-	errors     int           // Number of errors
-	mismatched int           // Number of mismatched responses
-	elapsed    time.Duration // Total duration of requests
+	requests   int // Number of requests
+	errors     int // Number of errors
+	mismatched int // Number of mismatched responses
+	completed  int // Number of completed responses across clients
+	overloaded int // Number of times reporting channel was overloaded
+
+	elapsed time.Duration // Total duration of requests
 
 	MismatchedResponse func([]Response)
+}
+
+// Report creates reporting by comparing responses from clients. It installs
+// itself as the ResponseHandler to achieve this and will error if the
+// ResponseHandler is already set.
+func Report(clients Clients) (*report, error) {
+	r := &report{
+		clients:          clients,
+		pendingResponses: make(map[requestID][]Response),
+		respCh:           make(chan Response, chanBuffer),
+	}
+
+	responseHandler := func(resp Response) {
+		select {
+		case r.respCh <- resp:
+		default:
+			// Detected overloaded report channel, count it and try again.
+			// If this happens too much, we need to tweak the
+			// buffering/goroutines. since it will affect the benchmark results.
+			r.overloaded += 1
+			r.respCh <- resp
+		}
+	}
+
+	for _, c := range clients {
+		if c.ResponseHandler != nil {
+			return nil, errors.New("failed to install report ResponseHandler on client, already set")
+		}
+		c.ResponseHandler = responseHandler
+	}
+
+	return r, nil
 }
 
 func (r *report) count(err error, elapsed time.Duration) {
@@ -32,10 +72,12 @@ func (r *report) compareResponses(resp Response) {
 	// All set, let's compare
 	otherResponses := r.pendingResponses[resp.ID]
 	delete(r.pendingResponses, resp.ID) // TODO: Reuse these arrays
+	r.completed += 1
 
 	for _, other := range otherResponses {
 		if !other.Equal(resp) {
 			// Mismatch found, report the whole response set
+			r.mismatched += 1
 			if r.MismatchedResponse != nil {
 				otherResponses = append(otherResponses, resp)
 				r.MismatchedResponse(otherResponses)
@@ -44,11 +86,17 @@ func (r *report) compareResponses(resp Response) {
 	}
 }
 
-// TODO: Need a separate service to compare returned bodies
-func (r *report) Serve(out <-chan Response) error {
-	for resp := range out {
-		r.count(resp.Err, resp.Elapsed)
-		r.compareResponses(resp)
+func (r *report) handle(resp Response) error {
+	r.count(resp.Err, resp.Elapsed)
+	r.compareResponses(resp)
+	return nil
+}
+
+func (r *report) Serve(ctx context.Context) error {
+	for resp := range r.respCh {
+		if err := r.handle(resp); err != nil {
+			return err
+		}
 	}
 	return nil
 }
