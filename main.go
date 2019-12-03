@@ -102,6 +102,12 @@ func main() {
 		exit(3, "failed to create report: %s", err)
 	}
 
+	if len(options.Verbose) > 0 {
+		r.MismatchedResponse = func(resps []Response) {
+			logger.Info().Msgf("mismatched responses: %s", resps)
+		}
+	}
+
 	g.Go(func() error {
 		return clients.Serve(ctx)
 	})
