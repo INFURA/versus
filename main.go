@@ -115,19 +115,22 @@ func main() {
 	logger.Info().Int("clients", len(clients)).Msg("started endpoint clients, pumping stdin")
 
 	g.Go(func() error {
+		defer abort()
 		return pump(ctx, os.Stdin, clients)
 	})
 
-	if err := g.Wait(); err != nil {
+	if err := g.Wait(); err == context.Canceled {
+		// Shutting down
+	} else if err != nil {
 		exit(3, "failed: %s", err)
 	}
 
 	// TODO: Make a report
-	for _, client := range clients {
-		fmt.Println(client.Stats)
+	for i, client := range clients {
+		fmt.Printf("endpoint[%d]: %+v\n", i, client.Stats)
 	}
 
-	fmt.Println(r)
+	fmt.Printf("report: %+v\n", r)
 }
 
 // pump takes lines from a reader and pumps them into the clients
