@@ -77,6 +77,12 @@ func main() {
 		panic("aborted")
 	}(abort)
 
+	if err := run(ctx, options); err != nil {
+		exit(2, "error during run: %s", err)
+	}
+}
+
+func run(ctx context.Context, options Options) error {
 	if options.Duration != "" {
 		d, err := time.ParseDuration(options.Duration)
 		if err != nil {
@@ -89,22 +95,29 @@ func main() {
 		}
 	}
 
+	ctx, done := context.WithCancel(ctx)
+	defer done()
+
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Launch clients
 	clients, err := NewClients(options.Args.Endpoints, options.Concurrency)
 	if err != nil {
-		exit(3, "failed to create clients: %s", err)
+		return fmt.Errorf("failed to create clients: %w", err)
 	}
 
 	r, err := Report(clients)
 	if err != nil {
-		exit(3, "failed to create report: %s", err)
+		return fmt.Errorf("failed to create report: %w", err)
 	}
+
+	g.Go(func() error {
+		return r.Serve(ctx)
+	})
 
 	if len(options.Verbose) > 0 {
 		r.MismatchedResponse = func(resps []Response) {
-			logger.Info().Msgf("mismatched responses: %s", resps)
+			logger.Info().Msgf("mismatched responses: %v", resps)
 		}
 	}
 
@@ -115,14 +128,13 @@ func main() {
 	logger.Info().Int("clients", len(clients)).Msg("started endpoint clients, pumping stdin")
 
 	g.Go(func() error {
-		defer abort()
 		return pump(ctx, os.Stdin, clients)
 	})
 
 	if err := g.Wait(); err == context.Canceled {
 		// Shutting down
 	} else if err != nil {
-		exit(3, "failed: %s", err)
+		return fmt.Errorf("failed to serve: %w", err)
 	}
 
 	// TODO: Make a report
@@ -131,6 +143,7 @@ func main() {
 	}
 
 	fmt.Printf("report: %+v\n", r)
+	return nil
 }
 
 // pump takes lines from a reader and pumps them into the clients
@@ -152,6 +165,8 @@ func pump(ctx context.Context, r io.Reader, c Clients) error {
 			return err
 		}
 	}
+
+	c.Finalize()
 
 	if err := scanner.Err(); err != nil {
 		return err

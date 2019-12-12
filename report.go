@@ -74,7 +74,12 @@ func (r *report) compareResponses(resp Response) {
 	delete(r.pendingResponses, resp.ID) // TODO: Reuse these arrays
 	r.completed += 1
 
+	durations := make([]time.Duration, 0, len(r.clients))
+	durations = append(durations, resp.Elapsed)
+
 	for _, other := range otherResponses {
+		durations = append(durations, other.Elapsed)
+
 		if !other.Equal(resp) {
 			// Mismatch found, report the whole response set
 			r.mismatched += 1
@@ -84,6 +89,8 @@ func (r *report) compareResponses(resp Response) {
 			}
 		}
 	}
+
+	logger.Debug().Int("id", int(resp.ID)).Msgf("converged responses, durations: %v", durations)
 }
 
 func (r *report) handle(resp Response) error {
@@ -93,10 +100,14 @@ func (r *report) handle(resp Response) error {
 }
 
 func (r *report) Serve(ctx context.Context) error {
-	for resp := range r.respCh {
-		if err := r.handle(resp); err != nil {
-			return err
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case resp := <-r.respCh:
+			if err := r.handle(resp); err != nil {
+				return err
+			}
 		}
 	}
-	return nil
 }

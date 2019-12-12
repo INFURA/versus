@@ -39,7 +39,7 @@ func NewClients(endpoints []string, concurrency int) (Clients, error) {
 		if err != nil {
 			return nil, err
 		}
-		clients = append(clients, *c)
+		clients = append(clients, c)
 	}
 	return clients, nil
 }
@@ -63,6 +63,7 @@ func (client *Client) Serve(ctx context.Context) error {
 	defer close(respCh)
 
 	g, ctx := errgroup.WithContext(ctx)
+	ctx, finalized := context.WithCancel(ctx)
 
 	g.Go(func() error {
 		for {
@@ -95,6 +96,11 @@ func (client *Client) Serve(ctx context.Context) error {
 					logger.Debug().Str("endpoint", client.Endpoint).Msg("shutting down client")
 					return nil
 				case req := <-client.In:
+					if req.ID == -1 {
+						// Final request received, shutdown
+						finalized()
+						return nil
+					}
 					respCh <- req.Do(t)
 				}
 			}
@@ -106,13 +112,23 @@ func (client *Client) Serve(ctx context.Context) error {
 
 var id requestID
 
-type Clients []Client
+type Clients []*Client
+
+// Finalize sends a request with ID -1 which signals the end of the stream, so
+// serving will end cleanly.
+func (c Clients) Finalize() {
+	for _, client := range c {
+		client.In <- Request{
+			ID: -1,
+		}
+	}
+}
 
 func (c Clients) Send(line []byte) error {
 	id += 1
 	for _, client := range c {
 		client.In <- Request{
-			client: &client,
+			client: client,
 			ID:     id,
 
 			Line:      line,
