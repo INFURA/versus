@@ -17,11 +17,11 @@ func TestReport(t *testing.T) {
 	}
 
 	r.handle(Response{
-		client: &clients[0],
+		client: clients[0],
 		ID:     1,
 	})
 	r.handle(Response{
-		client: &clients[0],
+		client: clients[0],
 		ID:     2,
 	})
 	if got, want := r.requests, 2; got != want {
@@ -34,7 +34,7 @@ func TestReport(t *testing.T) {
 		t.Errorf("got: %d; want: %d", got, want)
 	}
 	r.handle(Response{
-		client: &clients[1],
+		client: clients[1],
 		ID:     2,
 	})
 	if got, want := r.requests, 3; got != want {
@@ -50,7 +50,7 @@ func TestReport(t *testing.T) {
 		t.Errorf("got: %d; want: %d", got, want)
 	}
 	r.handle(Response{
-		client: &clients[1],
+		client: clients[1],
 		ID:     1,
 		Body:   []byte("foo"),
 	})

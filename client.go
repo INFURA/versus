@@ -46,9 +46,11 @@ func NewClients(endpoints []string, concurrency int) (Clients, error) {
 
 type Client struct {
 	Endpoint    string
-	Concurrency int // Number of goroutines to make requests with. Must be >=1.
-	In          chan Request
-	Stats       clientStats
+	Concurrency int           // Number of goroutines to make requests with. Must be >=1.
+	Timeout     time.Duration // Timeout of each request
+
+	In    chan Request
+	Stats clientStats
 
 	ResponseHandler func(Response)
 }
@@ -64,6 +66,7 @@ func (client *Client) Serve(ctx context.Context) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 	ctx, finalized := context.WithCancel(ctx)
+	defer finalized()
 
 	g.Go(func() error {
 		for {
@@ -86,7 +89,7 @@ func (client *Client) Serve(ctx context.Context) error {
 	for i := 0; i < client.Concurrency; i++ {
 		g.Go(func() error {
 			// Consume requests
-			t, err := NewTransport(client.Endpoint)
+			t, err := NewTransport(client.Endpoint, client.Timeout)
 			if err != nil {
 				return err
 			}
