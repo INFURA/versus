@@ -32,13 +32,14 @@ func NewClient(endpoint string, concurrency int) (*Client, error) {
 	return &c, nil
 }
 
-func NewClients(endpoints []string, concurrency int) (Clients, error) {
+func NewClients(endpoints []string, concurrency int, timeout time.Duration) (Clients, error) {
 	clients := make(Clients, 0, len(endpoints))
 	for _, endpoint := range endpoints {
 		c, err := NewClient(endpoint, concurrency)
 		if err != nil {
 			return nil, err
 		}
+		c.Timeout = timeout
 		clients = append(clients, c)
 	}
 	return clients, nil

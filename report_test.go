@@ -1,12 +1,15 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestReport(t *testing.T) {
 	clients, err := NewClients([]string{
 		"noop://foo",
 		"noop://bar",
-	}, 1)
+	}, 1, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

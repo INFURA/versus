@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	flags "github.com/jessevdk/go-flags"
@@ -22,10 +23,12 @@ type Options struct {
 	Args struct {
 		Endpoints []string `positional-arg-name:"endpoint" description:"API endpoint to load test, such as \"http://localhost:8080/\""`
 	} `positional-args:"yes"`
-	Duration    string `long:"duration" description:"Stop after duration (example: 60s)"`
-	Requests    int    `long:"requests" description:"Stop after N requests per endpoint"`
+
+	Timeout     string `long:"timeout" description:"Abort request after duration" default:"30s"`
+	StopAfter   string `long:"stop-after" description:"Stop after N requests per endpoint, N can be a number or duration."`
 	Concurrency int    `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
-	Source      string `long:"source" description:"Where to get requests from (options: stdin-jsons, ethspam)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
+
+	//Source      string `long:"source" description:"Where to get requests from (options: stdin-jsons, ethspam)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
 
 	Verbose []bool `long:"verbose" short:"v" description:"Show verbose logging."`
 	Version bool   `long:"version" description:"Print version and exit."`
@@ -82,17 +85,42 @@ func main() {
 	}
 }
 
+func parseStopAfter(s string) (time.Duration, int, error) {
+	n, err := strconv.ParseUint(s, 10, 32)
+	if err == nil {
+		return 0, int(n), nil
+	}
+
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse duration: %w", err)
+	}
+
+	return d, 0, nil
+}
+
 func run(ctx context.Context, options Options) error {
-	if options.Duration != "" {
-		d, err := time.ParseDuration(options.Duration)
+	var stopAfter int
+	if options.StopAfter != "" {
+		d, n, err := parseStopAfter(options.StopAfter)
 		if err != nil {
-			exit(1, "failed to parse duration: %s\n", err)
+			return err
 		}
 		if d > 0 {
 			timeoutCtx, cancel := context.WithTimeout(ctx, d)
 			defer cancel()
 			ctx = timeoutCtx
 		}
+		stopAfter = n
+	}
+
+	var timeout time.Duration
+	if options.Timeout != "" {
+		d, err := time.ParseDuration(options.Timeout)
+		if err != nil {
+			return fmt.Errorf("failed to parse request timeout: %w", err)
+		}
+		timeout = d
 	}
 
 	ctx, done := context.WithCancel(ctx)
@@ -101,7 +129,7 @@ func run(ctx context.Context, options Options) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Launch clients
-	clients, err := NewClients(options.Args.Endpoints, options.Concurrency)
+	clients, err := NewClients(options.Args.Endpoints, options.Concurrency, timeout)
 	if err != nil {
 		return fmt.Errorf("failed to create clients: %w", err)
 	}
@@ -128,7 +156,7 @@ func run(ctx context.Context, options Options) error {
 	logger.Info().Int("clients", len(clients)).Msg("started endpoint clients, pumping stdin")
 
 	g.Go(func() error {
-		return pump(ctx, os.Stdin, clients)
+		return pump(ctx, os.Stdin, clients, stopAfter)
 	})
 
 	if err := g.Wait(); err == context.Canceled {
@@ -147,8 +175,9 @@ func run(ctx context.Context, options Options) error {
 }
 
 // pump takes lines from a reader and pumps them into the clients
-func pump(ctx context.Context, r io.Reader, c Clients) error {
+func pump(ctx context.Context, r io.Reader, c Clients, stopAfter int) error {
 	scanner := bufio.NewScanner(r)
+	n := 0
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -163,6 +192,13 @@ func pump(ctx context.Context, r io.Reader, c Clients) error {
 
 		if err := c.Send(line); err != nil {
 			return err
+		}
+		n += 1
+
+		if stopAfter > 0 && n >= stopAfter {
+			logger.Info().Msgf("stopping after %d requests", n)
+			c.Finalize()
+			return nil
 		}
 	}
 
