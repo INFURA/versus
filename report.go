@@ -90,7 +90,7 @@ func (r *report) compareResponses(resp Response) {
 		}
 	}
 
-	logger.Debug().Int("id", int(resp.ID)).Msgf("converged responses, durations: %v", durations)
+	logger.Debug().Int("id", int(resp.ID)).Int("mismatched", r.mismatched).Durs("elapsed", durations).Err(resp.Err).Msg("result")
 }
 
 func (r *report) handle(resp Response) error {
