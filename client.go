@@ -146,6 +146,7 @@ func (clients Clients) Serve(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	for _, c := range clients {
+		c := c // Otherwise c gets mutated per iteration and we get a race
 		g.Go(func() error {
 			return c.Serve(ctx)
 		})
