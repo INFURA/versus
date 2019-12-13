@@ -53,7 +53,7 @@ func (r *Response) Equal(other Response) bool {
 	return false
 }
 
-type Responses []Response
+type Responses []*Response
 
 func (r Responses) String() string {
 	var buf strings.Builder
