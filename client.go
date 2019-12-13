@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -66,26 +67,24 @@ func (client *Client) Serve(ctx context.Context) error {
 	defer close(respCh)
 
 	g, ctx := errgroup.WithContext(ctx)
-	ctx, finalized := context.WithCancel(ctx)
-	defer finalized()
 
-	g.Go(func() error {
-		for {
-			select {
-			case resp := <-respCh:
-				client.Stats.Count(resp.Err, resp.Elapsed)
-				if client.ResponseHandler != nil {
-					client.ResponseHandler(resp)
-				}
-			case <-ctx.Done():
-				return ctx.Err()
+	respWait := sync.WaitGroup{}
+
+	go func() {
+		for resp := range respCh {
+			client.Stats.Count(resp.Err, resp.Elapsed)
+			if client.ResponseHandler != nil {
+				client.ResponseHandler(resp)
 			}
+			respWait.Done()
 		}
-	})
+	}()
 
 	if client.Concurrency < 1 {
 		client.Concurrency = 1
 	}
+
+	logger.Debug().Str("endpoint", client.Endpoint).Int("concurrency", client.Concurrency).Msg("starting client")
 
 	for i := 0; i < client.Concurrency; i++ {
 		g.Go(func() error {
@@ -97,21 +96,24 @@ func (client *Client) Serve(ctx context.Context) error {
 			for {
 				select {
 				case <-ctx.Done():
-					logger.Debug().Str("endpoint", client.Endpoint).Msg("shutting down client")
+					logger.Debug().Str("endpoint", client.Endpoint).Msg("aborting client")
 					return nil
 				case req := <-client.In:
 					if req.ID == -1 {
 						// Final request received, shutdown
-						finalized()
+						logger.Debug().Str("endpoint", client.Endpoint).Msg("received final request, shutting down")
 						return nil
 					}
+					respWait.Add(1)
 					respCh <- req.Do(t)
 				}
 			}
 		})
 	}
 
-	return g.Wait()
+	err := g.Wait()
+	respWait.Wait()
+	return err
 }
 
 var id requestID
@@ -122,8 +124,11 @@ type Clients []*Client
 // serving will end cleanly.
 func (c Clients) Finalize() {
 	for _, client := range c {
-		client.In <- Request{
-			ID: -1,
+		for i := 0; i < client.Concurrency; i++ {
+			// Signal each client instance to shut down
+			client.In <- Request{
+				ID: -1,
+			}
 		}
 	}
 }
