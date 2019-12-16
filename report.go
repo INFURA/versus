@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"sync"
 	"time"
 )
 
@@ -20,6 +23,30 @@ type report struct {
 	elapsed time.Duration // Total duration of requests
 
 	MismatchedResponse func([]Response)
+
+	wg sync.WaitGroup
+}
+
+func (r *report) Render(w io.Writer) error {
+	fmt.Fprintf(w, "\n* Report for %d endpoints:\n", len(r.clients))
+	fmt.Fprintf(w, "  Completed:  %d of %d requests\n", r.completed, r.requests)
+	fmt.Fprintf(w, "  Elapsed:    %s\n", r.elapsed)
+	fmt.Fprintf(w, "  Errors:     %d\n", r.errors)
+	fmt.Fprintf(w, "  Mismatched: %d\n", r.mismatched)
+
+	if r.overloaded > 0 {
+		fmt.Fprintf(w, "** Reporting consumer was overloaded %d times. Please open an issue.\n", r.overloaded)
+	}
+
+	if len(r.pendingResponses) != 0 {
+		fmt.Fprintf(w, "** %d incomplete responses:\n", len(r.pendingResponses))
+		for reqID, resps := range r.pendingResponses {
+			fmt.Fprintf(w, " * %d: %v\n", reqID, resps)
+		}
+		fmt.Fprintf(w, "\n")
+	}
+
+	return nil
 }
 
 // Report creates reporting by comparing responses from clients. It installs

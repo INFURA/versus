@@ -112,7 +112,10 @@ func (client *Client) Serve(ctx context.Context) error {
 	}
 
 	err := g.Wait()
-	respWait.Wait()
+	if err == nil {
+		respWait.Wait()
+	}
+
 	return err
 }
 

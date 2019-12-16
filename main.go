@@ -167,8 +167,7 @@ func run(ctx context.Context, options Options) error {
 		fmt.Printf("endpoint[%d]: %+v\n", i, client.Stats)
 	}
 
-	fmt.Printf("report: %+v\n", r)
-	return nil
+	return r.Render(os.Stdout)
 }
 
 // pump takes lines from a reader and pumps them into the clients
