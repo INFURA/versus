@@ -29,7 +29,7 @@ type report struct {
 
 func (r *report) Render(w io.Writer) error {
 	fmt.Fprintf(w, "\n* Report for %d endpoints:\n", len(r.clients))
-	fmt.Fprintf(w, "  Completed:  %d of %d requests\n", r.completed, r.requests)
+	fmt.Fprintf(w, "  Completed:  %d results with %d total requests\n", r.completed, r.requests)
 	fmt.Fprintf(w, "  Elapsed:    %s\n", r.elapsed)
 	fmt.Fprintf(w, "  Errors:     %d\n", r.errors)
 	fmt.Fprintf(w, "  Mismatched: %d\n", r.mismatched)
