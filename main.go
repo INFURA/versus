@@ -147,10 +147,12 @@ func run(ctx context.Context, options Options) error {
 	}
 
 	g.Go(func() error {
-		return clients.Serve(ctx)
+		// TODO: Pull out r.respCh
+		defer close(r.respCh)
+		return clients.Serve(ctx, r.respCh)
 	})
 
-	logger.Info().Int("clients", len(clients)).Msg("started endpoint clients, pumping stdin")
+	logger.Info().Int("clients", len(clients)).Msg("started endpoint clients, waiting for stdin")
 
 	g.Go(func() error {
 		return pump(ctx, os.Stdin, clients, stopAfter)

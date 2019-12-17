@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"sync"
 	"time"
 )
 
@@ -23,8 +21,6 @@ type report struct {
 	elapsed time.Duration // Total duration of requests
 
 	MismatchedResponse func([]Response)
-
-	wg sync.WaitGroup
 }
 
 func (r *report) Render(w io.Writer) error {
@@ -58,26 +54,6 @@ func Report(clients Clients) (*report, error) {
 		pendingResponses: make(map[requestID][]Response),
 		respCh:           make(chan Response, chanBuffer),
 	}
-
-	responseHandler := func(resp Response) {
-		select {
-		case r.respCh <- resp:
-		default:
-			// Detected overloaded report channel, count it and try again.
-			// If this happens too much, we need to tweak the
-			// buffering/goroutines. since it will affect the benchmark results.
-			r.overloaded += 1
-			r.respCh <- resp
-		}
-	}
-
-	for _, c := range clients {
-		if c.ResponseHandler != nil {
-			return nil, errors.New("failed to install report ResponseHandler on client, already set")
-		}
-		c.ResponseHandler = responseHandler
-	}
-
 	return r, nil
 }
 
@@ -131,7 +107,10 @@ func (r *report) Serve(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case resp := <-r.respCh:
+		case resp, closed := <-r.respCh:
+			if closed {
+				return nil
+			}
 			if err := r.handle(resp); err != nil {
 				return err
 			}

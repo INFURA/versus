@@ -9,12 +9,16 @@ import (
 )
 
 type clientStats struct {
+	mu        sync.Mutex
 	NumTotal  int           // Number of requests
 	NumErrors int           // Number of errors
 	TimeTotal time.Duration // Total duration of requests
 }
 
 func (stats *clientStats) Count(err error, elapsed time.Duration) {
+	stats.mu.Lock()
+	defer stats.mu.Unlock()
+
 	stats.NumTotal += 1
 	if err != nil {
 		stats.NumErrors += 1
@@ -53,8 +57,6 @@ type Client struct {
 
 	In    chan Request
 	Stats clientStats
-
-	ResponseHandler func(Response)
 }
 
 func (client *Client) Handle(req Request) {
@@ -62,23 +64,8 @@ func (client *Client) Handle(req Request) {
 }
 
 // Serve starts the async request and response goroutine consumers.
-func (client *Client) Serve(ctx context.Context) error {
-	respCh := make(chan Response, chanBuffer)
-	defer close(respCh)
-
+func (client *Client) Serve(ctx context.Context, out chan<- Response) error {
 	g, ctx := errgroup.WithContext(ctx)
-
-	respWait := sync.WaitGroup{}
-
-	go func() {
-		for resp := range respCh {
-			client.Stats.Count(resp.Err, resp.Elapsed)
-			if client.ResponseHandler != nil {
-				client.ResponseHandler(resp)
-			}
-			respWait.Done()
-		}
-	}()
 
 	if client.Concurrency < 1 {
 		client.Concurrency = 1
@@ -104,19 +91,15 @@ func (client *Client) Serve(ctx context.Context) error {
 						logger.Debug().Str("endpoint", client.Endpoint).Msg("received final request, shutting down")
 						return nil
 					}
-					respWait.Add(1)
-					respCh <- req.Do(t)
+					resp := req.Do(t)
+					client.Stats.Count(resp.Err, resp.Elapsed)
+					out <- resp
 				}
 			}
 		})
 	}
 
-	err := g.Wait()
-	if err == nil {
-		respWait.Wait()
-	}
-
-	return err
+	return g.Wait()
 }
 
 var id requestID
@@ -150,13 +133,13 @@ func (c Clients) Send(line []byte) error {
 	return nil
 }
 
-func (clients Clients) Serve(ctx context.Context) error {
+func (clients Clients) Serve(ctx context.Context, out chan Response) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	for _, c := range clients {
 		c := c // Otherwise c gets mutated per iteration and we get a race
 		g.Go(func() error {
-			return c.Serve(ctx)
+			return c.Serve(ctx, out)
 		})
 	}
 
