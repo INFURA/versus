@@ -9,10 +9,12 @@ import (
 )
 
 type clientStats struct {
-	mu        sync.Mutex
-	NumTotal  int           // Number of requests
-	NumErrors int           // Number of errors
-	TimeTotal time.Duration // Total duration of requests
+	mu         sync.Mutex
+	NumTotal   int           // Number of requests
+	NumErrors  int           // Number of errors
+	TimeErrors time.Duration // Duration of error responses specifically
+	TimeTotal  time.Duration // Total duration of requests
+	Errors     map[string]int
 }
 
 func (stats *clientStats) Count(err error, elapsed time.Duration) {
@@ -22,17 +24,21 @@ func (stats *clientStats) Count(err error, elapsed time.Duration) {
 	stats.NumTotal += 1
 	if err != nil {
 		stats.NumErrors += 1
+		stats.TimeErrors += elapsed
+
+		if stats.Errors == nil {
+			stats.Errors = map[string]int{}
+		}
+		stats.Errors[err.Error()] += 1
 	}
 	stats.TimeTotal += elapsed
 }
-
-const chanBuffer = 20
 
 func NewClient(endpoint string, concurrency int) (*Client, error) {
 	c := Client{
 		Endpoint:    endpoint,
 		Concurrency: concurrency,
-		In:          make(chan Request, chanBuffer),
+		In:          make(chan Request, 2*concurrency),
 	}
 	return &c, nil
 }

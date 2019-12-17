@@ -123,10 +123,15 @@ func run(ctx context.Context, options Options) error {
 		timeout = d
 	}
 
+	if options.Concurrency < 1 {
+		logger.Info().Int("concurrency", options.Concurrency).Msg("concurrency is less than 1, overriding to 1")
+		options.Concurrency = 1
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 
 	// responses is closed when clients are shut down
-	responses := make(chan Response, chanBuffer)
+	responses := make(chan Response, options.Concurrency*2)
 
 	// Launch clients
 	clients, err := NewClients(options.Args.Endpoints, options.Concurrency, timeout)
