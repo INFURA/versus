@@ -27,14 +27,21 @@ type report struct {
 }
 
 func (r *report) Render(w io.Writer) error {
-	elapsedAvg := r.elapsed / time.Duration(r.requests)
-	errorRate := float64(r.errors*100) / float64(r.requests)
+	fmt.Fprintf(w, "Endpoints:\n")
+	for i, c := range r.Clients {
+		fmt.Fprintf(w, "\n%d. %q\n", i, c.Endpoint)
+		if err := c.Stats.Render(w); err != nil {
+			return err
+		}
+	}
 
-	fmt.Fprintf(w, "\n* Report for %d endpoints:\n", len(r.Clients))
-	fmt.Fprintf(w, "  Completed:  %d results with %d total requests\n", r.completed, r.requests)
-	fmt.Fprintf(w, "  Elapsed:    %s request avg, %s total run time\n", elapsedAvg, time.Now().Sub(r.started))
-	fmt.Fprintf(w, "  Errors:     %d (%0.2f%%)\n", r.errors, errorRate)
-	fmt.Fprintf(w, "  Mismatched: %d\n", r.mismatched)
+	fmt.Fprintf(w, "\n** Summary for %d endpoints:\n", len(r.Clients))
+	fmt.Fprintf(w, "   Completed:  %d results with %d total requests\n", r.completed, r.requests)
+	if r.requests > 0 {
+		fmt.Fprintf(w, "   Elapsed:    %s request avg, %s total run time\n", r.elapsed/time.Duration(r.requests), time.Now().Sub(r.started))
+		fmt.Fprintf(w, "   Errors:     %d (%0.2f%%)\n", r.errors, float64(r.errors*100)/float64(r.requests))
+	}
+	fmt.Fprintf(w, "   Mismatched: %d\n", r.mismatched)
 
 	if r.overloaded > 0 {
 		fmt.Fprintf(w, "** Reporting consumer was overloaded %d times. Please open an issue.\n", r.overloaded)

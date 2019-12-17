@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -32,6 +34,32 @@ func (stats *clientStats) Count(err error, elapsed time.Duration) {
 		stats.Errors[err.Error()] += 1
 	}
 	stats.TimeTotal += elapsed
+}
+
+func (stats *clientStats) Render(w io.Writer) error {
+	if stats.NumTotal == 0 {
+		fmt.Fprintf(w, "   No requests.")
+	}
+	var errRate, rps float64
+
+	errRate = float64(stats.NumErrors*100) / float64(stats.NumTotal)
+	rps = float64(stats.NumTotal) / stats.TimeTotal.Seconds()
+	reqAvg := stats.TimeTotal / time.Duration(stats.NumTotal)
+
+	fmt.Fprintf(w, "   Requests/Sec: %0.2f", rps)
+	if stats.NumErrors > 0 && stats.NumErrors != stats.NumTotal {
+		errAvg := stats.TimeErrors / time.Duration(stats.NumErrors)
+		fmt.Fprintf(w, ", %s per error", errAvg)
+	}
+	fmt.Fprintf(w, "\n")
+	fmt.Fprintf(w, "   Average:      %s\n", reqAvg)
+	fmt.Fprintf(w, "   Errors:       %0.2f%%\n", errRate)
+
+	for msg, num := range stats.Errors {
+		fmt.Fprintf(w, "   * [%d] %q\n", num, msg)
+	}
+
+	return nil
 }
 
 func NewClient(endpoint string, concurrency int) (*Client, error) {
