@@ -93,7 +93,12 @@ func (client *Client) Serve(ctx context.Context, out chan<- Response) error {
 					}
 					resp := req.Do(t)
 					client.Stats.Count(resp.Err, resp.Elapsed)
-					out <- resp
+					select {
+					case out <- resp:
+					default:
+						logger.Warn().Msg("response channel is overloaded, please open an issue")
+						out <- resp
+					}
 				}
 			}
 		})
@@ -119,15 +124,19 @@ func (c Clients) Finalize() {
 	}
 }
 
-func (c Clients) Send(line []byte) error {
+func (c Clients) Send(ctx context.Context, line []byte) error {
 	id += 1
 	for _, client := range c {
-		client.In <- Request{
+		select {
+		case client.In <- Request{
 			client: client,
 			ID:     id,
 
 			Line:      line,
 			Timestamp: time.Now(),
+		}:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 	return nil

@@ -7,10 +7,14 @@ import (
 	"time"
 )
 
+// report creates reporting by comparing responses from clients.
 type report struct {
-	clients          Clients
+	Clients Clients
+
+	// MismatchedResponse is called when a response set does not match across clients
+	MismatchedResponse func([]Response)
+
 	pendingResponses map[requestID][]Response
-	respCh           chan Response
 
 	requests   int // Number of requests
 	errors     int // Number of errors
@@ -18,15 +22,14 @@ type report struct {
 	completed  int // Number of completed responses across clients
 	overloaded int // Number of times reporting channel was overloaded
 
+	started time.Time     // Time when the report serving started
 	elapsed time.Duration // Total duration of requests
-
-	MismatchedResponse func([]Response)
 }
 
 func (r *report) Render(w io.Writer) error {
-	fmt.Fprintf(w, "\n* Report for %d endpoints:\n", len(r.clients))
+	fmt.Fprintf(w, "\n* Report for %d endpoints:\n", len(r.Clients))
 	fmt.Fprintf(w, "  Completed:  %d results with %d total requests\n", r.completed, r.requests)
-	fmt.Fprintf(w, "  Elapsed:    %s\n", r.elapsed)
+	fmt.Fprintf(w, "  Elapsed:    %s spent on requests, %s total run time\n", r.elapsed, time.Now().Sub(r.started))
 	fmt.Fprintf(w, "  Errors:     %d\n", r.errors)
 	fmt.Fprintf(w, "  Mismatched: %d\n", r.mismatched)
 
@@ -45,18 +48,6 @@ func (r *report) Render(w io.Writer) error {
 	return nil
 }
 
-// Report creates reporting by comparing responses from clients. It installs
-// itself as the ResponseHandler to achieve this and will error if the
-// ResponseHandler is already set.
-func Report(clients Clients) (*report, error) {
-	r := &report{
-		clients:          clients,
-		pendingResponses: make(map[requestID][]Response),
-		respCh:           make(chan Response, chanBuffer),
-	}
-	return r, nil
-}
-
 func (r *report) count(err error, elapsed time.Duration) {
 	r.requests += 1
 	if err != nil {
@@ -67,7 +58,7 @@ func (r *report) count(err error, elapsed time.Duration) {
 
 func (r *report) compareResponses(resp Response) {
 	// Are we waiting for more responses?
-	if len(r.pendingResponses[resp.ID]) < len(r.clients)-1 {
+	if len(r.pendingResponses[resp.ID]) < len(r.Clients)-1 {
 		r.pendingResponses[resp.ID] = append(r.pendingResponses[resp.ID], resp)
 		return
 	}
@@ -77,7 +68,7 @@ func (r *report) compareResponses(resp Response) {
 	delete(r.pendingResponses, resp.ID) // TODO: Reuse these arrays
 	r.completed += 1
 
-	durations := make([]time.Duration, 0, len(r.clients))
+	durations := make([]time.Duration, 0, len(r.Clients))
 	durations = append(durations, resp.Elapsed)
 
 	for _, other := range otherResponses {
@@ -102,13 +93,18 @@ func (r *report) handle(resp Response) error {
 	return nil
 }
 
-func (r *report) Serve(ctx context.Context) error {
+func (r *report) Serve(ctx context.Context, respCh <-chan Response) error {
+	if r.pendingResponses == nil {
+		r.pendingResponses = make(map[requestID][]Response)
+	}
+
+	r.started = time.Now()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case resp, closed := <-r.respCh:
-			if closed {
+		case resp, ok := <-respCh:
+			if !ok {
 				return nil
 			}
 			if err := r.handle(resp); err != nil {

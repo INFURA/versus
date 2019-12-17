@@ -125,19 +125,18 @@ func run(ctx context.Context, options Options) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
+	// responses is closed when clients are shut down
+	responses := make(chan Response, chanBuffer)
+
 	// Launch clients
 	clients, err := NewClients(options.Args.Endpoints, options.Concurrency, timeout)
 	if err != nil {
 		return fmt.Errorf("failed to create clients: %w", err)
 	}
 
-	r, err := Report(clients)
-	if err != nil {
-		return fmt.Errorf("failed to create report: %w", err)
-	}
-
+	r := report{Clients: clients}
 	g.Go(func() error {
-		return r.Serve(ctx)
+		return r.Serve(ctx, responses)
 	})
 
 	if len(options.Verbose) > 0 {
@@ -147,9 +146,8 @@ func run(ctx context.Context, options Options) error {
 	}
 
 	g.Go(func() error {
-		// TODO: Pull out r.respCh
-		defer close(r.respCh)
-		return clients.Serve(ctx, r.respCh)
+		defer close(responses)
+		return clients.Serve(ctx, responses)
 	})
 
 	logger.Info().Int("clients", len(clients)).Msg("started endpoint clients, waiting for stdin")
@@ -173,7 +171,9 @@ func run(ctx context.Context, options Options) error {
 }
 
 // pump takes lines from a reader and pumps them into the clients
-func pump(ctx context.Context, r io.Reader, c Clients, stopAfter int) error {
+func pump(ctx context.Context, r io.Reader, clients Clients, stopAfter int) error {
+	defer clients.Finalize()
+
 	scanner := bufio.NewScanner(r)
 	n := 0
 	for scanner.Scan() {
@@ -185,22 +185,19 @@ func pump(ctx context.Context, r io.Reader, c Clients, stopAfter int) error {
 
 		line := scanner.Bytes()
 		if len(line) == 0 { // Done
+			logger.Debug().Msg("reached end of feed")
 			return nil
 		}
-
-		if err := c.Send(line); err != nil {
+		if err := clients.Send(ctx, line); err != nil {
 			return err
 		}
 		n += 1
 
 		if stopAfter > 0 && n >= stopAfter {
-			logger.Info().Msgf("stopping after %d requests", n)
-			c.Finalize()
+			logger.Info().Msgf("stopping request feed after %d requests", n)
 			return nil
 		}
 	}
-
-	c.Finalize()
 
 	if err := scanner.Err(); err != nil {
 		return err
