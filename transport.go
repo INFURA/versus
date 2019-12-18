@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/valyala/fasthttp"
 )
 
 func NewTransport(endpoint string, timeout time.Duration) (Transport, error) {
@@ -57,23 +55,6 @@ func (t *httpTransport) Send(body []byte) ([]byte, error) {
 		return nil, err
 	}
 	return buf, nil
-}
-
-type fasthttpTransport struct {
-	fasthttp.Client
-
-	endpoint string
-}
-
-func (t *fasthttpTransport) Send(body []byte) ([]byte, error) {
-	code, resp, err := t.Post(body, t.endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	if code >= 400 {
-		return nil, fmt.Errorf("bad status code: %d", code)
-	}
-	return resp, nil
 }
 
 type websocketTransport struct {
