@@ -167,11 +167,7 @@ func run(ctx context.Context, options Options) error {
 		return fmt.Errorf("failed to serve: %w", err)
 	}
 
-	// TODO: Make a report
-	for i, client := range clients {
-		fmt.Printf("endpoint[%d]: %+v\n", i, client.Stats)
-	}
-
+	// Report
 	return r.Render(os.Stdout)
 }
 
