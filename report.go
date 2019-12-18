@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -14,6 +15,7 @@ type report struct {
 	// MismatchedResponse is called when a response set does not match across clients
 	MismatchedResponse func([]Response)
 
+	once             sync.Once
 	pendingResponses map[requestID][]Response
 
 	requests   int // Number of requests
@@ -103,10 +105,14 @@ func (r *report) handle(resp Response) error {
 	return nil
 }
 
-func (r *report) Serve(ctx context.Context, respCh <-chan Response) error {
-	if r.pendingResponses == nil {
+func (r *report) init() {
+	r.once.Do(func() {
 		r.pendingResponses = make(map[requestID][]Response)
-	}
+	})
+}
+
+func (r *report) Serve(ctx context.Context, respCh <-chan Response) error {
+	r.init()
 
 	r.started = time.Now()
 	for {

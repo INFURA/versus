@@ -14,10 +14,8 @@ func TestReport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r, err := Report(clients)
-	if err != nil {
-		t.Fatal(err)
-	}
+	r := report{Clients: clients}
+	r.init()
 
 	r.handle(Response{
 		client: clients[0],
