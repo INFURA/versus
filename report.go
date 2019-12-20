@@ -40,7 +40,7 @@ func (r *report) Render(w io.Writer) error {
 	fmt.Fprintf(w, "\n** Summary for %d endpoints:\n", len(r.Clients))
 	fmt.Fprintf(w, "   Completed:  %d results with %d total requests\n", r.completed, r.requests)
 	if r.requests > 0 {
-		fmt.Fprintf(w, "   Elapsed:    %s request avg, %s total run time\n", r.elapsed/time.Duration(r.requests), time.Now().Sub(r.started))
+		fmt.Fprintf(w, "   Timing:     %s request avg, %s total run time\n", r.elapsed/time.Duration(r.requests), time.Now().Sub(r.started))
 		fmt.Fprintf(w, "   Errors:     %d (%0.2f%%)\n", r.errors, float64(r.errors*100)/float64(r.requests))
 	}
 	fmt.Fprintf(w, "   Mismatched: %d\n", r.mismatched)
