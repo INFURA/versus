@@ -11,51 +11,64 @@ import (
 )
 
 type clientStats struct {
-	mu         sync.Mutex
-	NumTotal   int           // Number of requests
-	NumErrors  int           // Number of errors
-	TimeErrors time.Duration // Duration of error responses specifically
-	TimeTotal  time.Duration // Total duration of requests
-	Errors     map[string]int
+	mu sync.Mutex
+
+	numTotal   int           // Number of requests
+	numErrors  int           // Number of errors
+	timeErrors time.Duration // Duration of error responses specifically
+	timeTotal  time.Duration // Total duration of requests
+	errors     map[string]int
+
+	timeMin float64
+	timeMax float64
+	timeAll []float64
 }
 
 func (stats *clientStats) Count(err error, elapsed time.Duration) {
 	stats.mu.Lock()
 	defer stats.mu.Unlock()
 
-	stats.NumTotal += 1
+	stats.numTotal += 1
 	if err != nil {
-		stats.NumErrors += 1
-		stats.TimeErrors += elapsed
+		stats.numErrors += 1
+		stats.timeErrors += elapsed
 
-		if stats.Errors == nil {
-			stats.Errors = map[string]int{}
+		if stats.errors == nil {
+			stats.errors = map[string]int{}
 		}
-		stats.Errors[err.Error()] += 1
+		stats.errors[err.Error()] += 1
 	}
-	stats.TimeTotal += elapsed
+	stats.timeTotal += elapsed
+	seconds := elapsed.Seconds()
+	stats.timeAll = append(stats.timeAll, seconds)
+	if stats.timeMin > seconds {
+		stats.timeMin = seconds
+	}
+	if stats.timeMax < seconds {
+		stats.timeMax = seconds
+	}
 }
 
 func (stats *clientStats) Render(w io.Writer) error {
-	if stats.NumTotal == 0 {
+	if stats.numTotal == 0 {
 		fmt.Fprintf(w, "   No requests.")
 	}
 	var errRate, rps float64
 
-	errRate = float64(stats.NumErrors*100) / float64(stats.NumTotal)
-	rps = float64(stats.NumTotal) / stats.TimeTotal.Seconds()
-	reqAvg := stats.TimeTotal / time.Duration(stats.NumTotal)
+	errRate = float64(stats.numErrors*100) / float64(stats.numTotal)
+	rps = float64(stats.numTotal) / stats.timeTotal.Seconds()
+	reqAvg := stats.timeTotal / time.Duration(stats.numTotal)
 
 	fmt.Fprintf(w, "   Requests/Sec: %0.2f", rps)
-	if stats.NumErrors > 0 && stats.NumErrors != stats.NumTotal {
-		errAvg := stats.TimeErrors / time.Duration(stats.NumErrors)
+	if stats.numErrors > 0 && stats.numErrors != stats.numTotal {
+		errAvg := stats.timeErrors / time.Duration(stats.numErrors)
 		fmt.Fprintf(w, ", %s per error", errAvg)
 	}
 	fmt.Fprintf(w, "\n")
 	fmt.Fprintf(w, "   Average:      %s\n", reqAvg)
 	fmt.Fprintf(w, "   Errors:       %0.2f%%\n", errRate)
 
-	for msg, num := range stats.Errors {
+	for msg, num := range stats.errors {
 		fmt.Fprintf(w, "   * [%d] %q\n", num, msg)
 	}
 
