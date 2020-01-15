@@ -67,6 +67,10 @@ func (h *histogram) Percentiles(buckets ...int) []float64 {
 			r[j] = h.all[i]
 			j++
 		}
+
+		if j >= len(buckets) {
+			break
+		}
 	}
 	return r
 }

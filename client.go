@@ -52,7 +52,7 @@ func (stats *clientStats) Render(w io.Writer) error {
 
 	fmt.Fprintf(w, "\n   Requests:   %0.2f per second", rps)
 	if stats.numErrors > 0 && stats.numErrors != stats.numTotal {
-		errAvg := stats.timeErrors / time.Duration(stats.numErrors)
+		errAvg := float64(stats.numErrors) / stats.timeErrors.Seconds()
 		fmt.Fprintf(w, ", %0.2f per second for errors", errAvg)
 	}
 
