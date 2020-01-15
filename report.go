@@ -96,7 +96,12 @@ func (r *report) compareResponses(resp Response) {
 		}
 	}
 
-	logger.Debug().Int("id", int(resp.ID)).Int("mismatched", r.mismatched).Durs("ms", durations).Err(resp.Err).Msg("result")
+	// TODO: Check for JSONRPC error objects?
+
+	l := logger.Debug().Int("id", int(resp.ID)).Int("mismatched", r.mismatched).Durs("ms", durations).Err(resp.Err)
+	// For super-debugging:
+	// l = l.Bytes("req", resp.Request.Line).Bytes("resp", resp.Body)
+	l.Msg("result")
 }
 
 func (r *report) handle(resp Response) error {

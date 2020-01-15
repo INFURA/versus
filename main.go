@@ -151,7 +151,7 @@ func run(ctx context.Context, options Options) error {
 
 	if len(options.Verbose) > 0 {
 		r.MismatchedResponse = func(resps []Response) {
-			logger.Info().Msgf("mismatched responses: %s", Responses(resps).String())
+			logger.Info().Int("id", int(resps[0].ID)).Msgf("mismatched responses: %s", Responses(resps).String())
 		}
 	}
 
