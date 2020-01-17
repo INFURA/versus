@@ -32,6 +32,7 @@ func NewTransport(endpoint string, timeout time.Duration) (Transport, error) {
 
 type Transport interface {
 	// TODO: Add context?
+	// TODO: Should this be: Do(Request) (Response, error)?
 	Send(body []byte) ([]byte, error)
 }
 

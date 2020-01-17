@@ -30,6 +30,11 @@ type Options struct {
 
 	//Source      string `long:"source" description:"Where to get requests from (options: stdin-jsons, ethspam)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
 
+	// TODO: Specify additional headers/configs per-endpoint (e.g. auth headers)
+	// TODO: Periodic reporting for long-running tests?
+	// TODO: Toggle compare results? Could probably reach higher throughput without result comparison.
+	// TODO: Add latency offcheck set before starting
+
 	Verbose []bool `long:"verbose" short:"v" description:"Show verbose logging."`
 	Version bool   `long:"version" description:"Print version and exit."`
 }
@@ -146,7 +151,7 @@ func run(ctx context.Context, options Options) error {
 
 	if len(options.Verbose) > 0 {
 		r.MismatchedResponse = func(resps []Response) {
-			logger.Info().Msgf("mismatched responses: %s", Responses(resps).String())
+			logger.Info().Int("id", int(resps[0].ID)).Msgf("mismatched responses: %s", Responses(resps).String())
 		}
 	}
 

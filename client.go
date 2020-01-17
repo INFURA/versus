@@ -11,52 +11,65 @@ import (
 )
 
 type clientStats struct {
-	mu         sync.Mutex
-	NumTotal   int           // Number of requests
-	NumErrors  int           // Number of errors
-	TimeErrors time.Duration // Duration of error responses specifically
-	TimeTotal  time.Duration // Total duration of requests
-	Errors     map[string]int
+	mu sync.Mutex
+
+	numTotal  int // Number of requests
+	numErrors int // Number of errors
+
+	timeErrors time.Duration // Duration of error responses specifically
+	errors     map[string]int
+
+	timing histogram
 }
 
 func (stats *clientStats) Count(err error, elapsed time.Duration) {
 	stats.mu.Lock()
 	defer stats.mu.Unlock()
 
-	stats.NumTotal += 1
+	stats.numTotal += 1
+	stats.timing.Add(elapsed.Seconds())
 	if err != nil {
-		stats.NumErrors += 1
-		stats.TimeErrors += elapsed
+		stats.numErrors += 1
+		stats.timeErrors += elapsed
 
-		if stats.Errors == nil {
-			stats.Errors = map[string]int{}
+		if stats.errors == nil {
+			stats.errors = map[string]int{}
 		}
-		stats.Errors[err.Error()] += 1
+		stats.errors[err.Error()] += 1
 	}
-	stats.TimeTotal += elapsed
 }
 
 func (stats *clientStats) Render(w io.Writer) error {
-	if stats.NumTotal == 0 {
+	// TODO: Use templating?
+	// TODO: Support JSON
+	if stats.numTotal == 0 {
 		fmt.Fprintf(w, "   No requests.")
 	}
 	var errRate, rps float64
 
-	errRate = float64(stats.NumErrors*100) / float64(stats.NumTotal)
-	rps = float64(stats.NumTotal) / stats.TimeTotal.Seconds()
-	reqAvg := stats.TimeTotal / time.Duration(stats.NumTotal)
+	errRate = float64(stats.numErrors*100) / float64(stats.numTotal)
+	rps = float64(stats.numTotal) / stats.timing.Total()
 
-	fmt.Fprintf(w, "   Requests/Sec: %0.2f", rps)
-	if stats.NumErrors > 0 && stats.NumErrors != stats.NumTotal {
-		errAvg := stats.TimeErrors / time.Duration(stats.NumErrors)
-		fmt.Fprintf(w, ", %s per error", errAvg)
+	fmt.Fprintf(w, "\n   Requests:   %0.2f per second", rps)
+	if stats.numErrors > 0 && stats.numErrors != stats.numTotal {
+		errAvg := float64(stats.numErrors) / stats.timeErrors.Seconds()
+		fmt.Fprintf(w, ", %0.2f per second for errors", errAvg)
 	}
-	fmt.Fprintf(w, "\n")
-	fmt.Fprintf(w, "   Average:      %s\n", reqAvg)
-	fmt.Fprintf(w, "   Errors:       %0.2f%%\n", errRate)
 
-	for msg, num := range stats.Errors {
-		fmt.Fprintf(w, "   * [%d] %q\n", num, msg)
+	fmt.Fprintf(w, "\n")
+	fmt.Fprintf(w, "   Timing:     %0.4fs avg, %0.4fs min, %0.4fs max\n", stats.timing.Average(), stats.timing.Min(), stats.timing.Max())
+
+	fmt.Fprintf(w, "\n   Percentiles:\n")
+	buckets := []int{25, 50, 75, 90, 95, 99}
+	percentiles := stats.timing.Percentiles(buckets...)
+	for i, bucket := range buckets {
+		fmt.Fprintf(w, "     %d%% in %0.4fs\n", bucket, percentiles[i])
+	}
+
+	fmt.Fprintf(w, "\n   Errors: %0.2f%%\n", errRate)
+
+	for msg, num := range stats.errors {
+		fmt.Fprintf(w, "     %d × %q\n", num, msg)
 	}
 
 	return nil
