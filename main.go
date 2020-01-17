@@ -28,7 +28,7 @@ type Options struct {
 	StopAfter   string `long:"stop-after" description:"Stop after N requests per endpoint, N can be a number or duration."`
 	Concurrency int    `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
 
-	//Source      string `long:"source" description:"Where to get requests from (options: stdin-jsons, ethspam)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
+	//Source string `long:"source" description:"Where requests come from (options: stdin-post, stdin-get)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
 
 	// TODO: Specify additional headers/configs per-endpoint (e.g. auth headers)
 	// TODO: Periodic reporting for long-running tests?
@@ -86,7 +86,7 @@ func main() {
 	}(abort)
 
 	if err := run(ctx, options); err != nil {
-		exit(2, "error during run: %s", err)
+		exit(2, "error during run: %s\n", err)
 	}
 }
 
@@ -136,7 +136,7 @@ func run(ctx context.Context, options Options) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// responses is closed when clients are shut down
-	responses := make(chan Response, options.Concurrency*2)
+	responses := make(chan Response, options.Concurrency*4)
 
 	// Launch clients
 	clients, err := NewClients(options.Args.Endpoints, options.Concurrency, timeout)
@@ -181,6 +181,10 @@ func pump(ctx context.Context, r io.Reader, clients Clients, stopAfter int) erro
 	defer clients.Finalize()
 
 	scanner := bufio.NewScanner(r)
+	// Some lines are really long, let's allocate a big fat megabyte for lines.
+	buf := make([]byte, 1024*1024)
+	scanner.Buffer(buf, cap(buf))
+
 	n := 0
 	for scanner.Scan() {
 		select {
