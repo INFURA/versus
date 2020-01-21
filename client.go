@@ -11,8 +11,9 @@ import (
 )
 
 type clientStats struct {
-	mu sync.Mutex
+	Concurrency int // Divide total time by concurrency to get rps
 
+	mu        sync.Mutex
 	numTotal  int // Number of requests
 	numErrors int // Number of errors
 
@@ -46,9 +47,12 @@ func (stats *clientStats) Render(w io.Writer) error {
 		fmt.Fprintf(w, "   No requests.")
 	}
 	var errRate, rps float64
-
+	concurrency := 1
+	if stats.Concurrency > 0 {
+		concurrency = stats.Concurrency
+	}
 	errRate = float64(stats.numErrors*100) / float64(stats.numTotal)
-	rps = float64(stats.numTotal) / stats.timing.Total()
+	rps = float64(stats.numTotal*concurrency) / stats.timing.Total()
 
 	fmt.Fprintf(w, "\n   Requests:   %0.2f per second", rps)
 	if stats.numErrors > 0 && stats.numErrors != stats.numTotal {
@@ -81,6 +85,7 @@ func NewClient(endpoint string, concurrency int) (*Client, error) {
 		Concurrency: concurrency,
 		In:          make(chan Request, 2*concurrency),
 	}
+	c.Stats.Concurrency = concurrency
 	return &c, nil
 }
 
