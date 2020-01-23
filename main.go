@@ -27,6 +27,7 @@ type Options struct {
 	Timeout     string `long:"timeout" description:"Abort request after duration" default:"30s"`
 	StopAfter   string `long:"stop-after" description:"Stop after N requests per endpoint, N can be a number or duration."`
 	Concurrency int    `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
+	//CompareResponse string `long:"compare-response" description:"Load all response bodies and compare between endpoints, will affect throughput." default:"on"`
 
 	//Source string `long:"source" description:"Where requests come from (options: stdin-post, stdin-get)" default:"stdin-jsons"` // Someday: stdin-tcpdump, file://foo.json, ws://remote-endpoint
 
@@ -135,8 +136,12 @@ func run(ctx context.Context, options Options) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
+	respBuffer := options.Concurrency * 4
+	if respBuffer < 50 {
+		respBuffer = 50
+	}
 	// responses is closed when clients are shut down
-	responses := make(chan Response, options.Concurrency*4)
+	responses := make(chan Response, respBuffer)
 
 	// Launch clients
 	clients, err := NewClients(options.Args.Endpoints, options.Concurrency, timeout)
@@ -148,7 +153,6 @@ func run(ctx context.Context, options Options) error {
 	g.Go(func() error {
 		return r.Serve(ctx, responses)
 	})
-
 	if len(options.Verbose) > 0 {
 		r.MismatchedResponse = func(resps []Response) {
 			logger.Info().Int("id", int(resps[0].ID)).Msgf("mismatched responses: %s", Responses(resps).String())

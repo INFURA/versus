@@ -15,6 +15,7 @@ type report struct {
 	// MismatchedResponse is called when a response set does not match across clients
 	MismatchedResponse func([]Response)
 
+	skipCompare      bool
 	once             sync.Once
 	pendingResponses map[requestID][]Response
 
@@ -106,6 +107,10 @@ func (r *report) compareResponses(resp Response) {
 
 func (r *report) handle(resp Response) error {
 	r.count(resp.Err, resp.Elapsed)
+	if r.skipCompare {
+		return nil
+	}
+
 	r.compareResponses(resp)
 	return nil
 }

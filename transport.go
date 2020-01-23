@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -31,6 +32,10 @@ func NewTransport(endpoint string, timeout time.Duration) (Transport, error) {
 		t = &httpTransport{
 			Client:   http.Client{Timeout: timeout},
 			endpoint: url.String(),
+			bodyReader: func(body io.ReadCloser) ([]byte, error) {
+				defer body.Close()
+				return ioutil.ReadAll(body)
+			},
 		}
 	case "ws", "wss":
 		// TODO: Implement
@@ -69,6 +74,8 @@ type httpTransport struct {
 
 	getHost string
 	getPath string
+
+	bodyReader func(io.ReadCloser) ([]byte, error)
 }
 
 func (t *httpTransport) Mode(m string) error {
@@ -107,12 +114,12 @@ func (t *httpTransport) Send(body []byte) ([]byte, error) {
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("bad status code: %d", resp.StatusCode)
 	}
-	// TODO: Avoid reading the entire body into memory
-	buf, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	if t.bodyReader == nil {
+		resp.Body.Close()
+		return nil, nil
 	}
-	return buf, nil
+	// TODO: Avoid reading the whole body into memory
+	return t.bodyReader(resp.Body)
 }
 
 type websocketTransport struct {
