@@ -25,7 +25,7 @@ type Options struct {
 	} `positional-args:"yes"`
 
 	Timeout     string `long:"timeout" description:"Abort request after duration" default:"30s"`
-	StopAfter   string `long:"stop-after" description:"Stop after N requests per endpoint, N can be a number or duration."`
+	StopAfter   string `long:"stop-after" description:"Stop after N requests per endpoint, N can be a number or duration"`
 	Concurrency int    `long:"concurrency" description:"Concurrent requests per endpoint" default:"1"`
 	//CompareResponse string `long:"compare-response" description:"Load all response bodies and compare between endpoints, will affect throughput." default:"on"`
 
@@ -36,6 +36,7 @@ type Options struct {
 	// TODO: Toggle compare results? Could probably reach higher throughput without result comparison.
 	// TODO: Add latency offcheck set before starting
 
+	//Latency bool   `long:"latency" description:"Attempt to measure endpoint latency separately by HEAD'ing the domain"`
 	Verbose []bool `long:"verbose" short:"v" description:"Show verbose logging."`
 	Version bool   `long:"version" description:"Print version and exit."`
 }
