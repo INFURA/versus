@@ -20,7 +20,8 @@ type clientStats struct {
 	timeErrors time.Duration // Duration of error responses specifically
 	errors     map[string]int
 
-	timing histogram
+	timing  histogram
+	latency time.Duration
 }
 
 func (stats *clientStats) Count(err error, elapsed time.Duration) {
@@ -45,6 +46,9 @@ func (stats *clientStats) Render(w io.Writer) error {
 	// TODO: Support JSON
 	if stats.numTotal == 0 {
 		fmt.Fprintf(w, "   No requests.")
+	}
+	if stats.latency > 0 {
+		fmt.Fprintf(w, "\n   Latency:    %0.4fs (estimated and included in timing)", stats.latency.Seconds())
 	}
 	var errRate, rps float64
 	concurrency := 1
@@ -132,6 +136,9 @@ func (client *Client) Serve(ctx context.Context, out chan<- Response) error {
 			if err != nil {
 				return err
 			}
+			defer func() {
+				client.Stats.latency = t.MinLatency()
+			}()
 			for {
 				select {
 				case <-ctx.Done():

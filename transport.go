@@ -7,9 +7,11 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -64,6 +66,7 @@ type Transport interface {
 	// TODO: Add context?
 	// TODO: Should this be: Do(Request) (Response, error)?
 	Send(body []byte) ([]byte, error)
+	MinLatency() time.Duration
 }
 
 type httpTransport struct {
@@ -76,6 +79,9 @@ type httpTransport struct {
 	getPath string
 
 	bodyReader func(io.ReadCloser) ([]byte, error)
+
+	mu         sync.Mutex
+	minLatency time.Duration
 }
 
 func (t *httpTransport) Mode(m string) error {
@@ -100,17 +106,29 @@ func (t *httpTransport) Mode(m string) error {
 }
 
 func (t *httpTransport) Send(body []byte) ([]byte, error) {
-	var resp *http.Response
+	var req *http.Request
 	var err error
 	if t.getHost != "" {
 		url := t.getHost + path.Join(t.getPath, string(body))
-		resp, err = t.Client.Get(url)
+		req, err = http.NewRequest("GET", url, nil)
 	} else {
-		resp, err = t.Client.Post(t.endpoint, t.contentType, bytes.NewReader(body))
+		req, err = http.NewRequest("POST", t.endpoint, bytes.NewReader(body))
+		req.Header.Set("Content-Type", t.contentType)
 	}
 	if err != nil {
 		return nil, err
 	}
+	var elapsed time.Duration
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), traceRequestDuration(&elapsed)))
+	resp, err := t.Client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	t.mu.Lock()
+	if t.minLatency == 0 || t.minLatency > elapsed {
+		t.minLatency = elapsed
+	}
+	t.mu.Unlock()
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("bad status code: %d", resp.StatusCode)
 	}
@@ -122,6 +140,27 @@ func (t *httpTransport) Send(body []byte) ([]byte, error) {
 	return t.bodyReader(resp.Body)
 }
 
+func (t *httpTransport) MinLatency() time.Duration {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.minLatency
+}
+
+func traceRequestDuration(d *time.Duration) *httptrace.ClientTrace {
+	var start time.Time
+	return &httptrace.ClientTrace{
+		GotFirstResponseByte: func() {
+			elapsed := time.Now().Sub(start)
+			*d = elapsed
+		},
+		GetConn: func(string) {
+			if start.IsZero() {
+				start = time.Now()
+			}
+		},
+	}
+}
+
 type websocketTransport struct {
 }
 
@@ -129,8 +168,16 @@ func (t *websocketTransport) Send(body []byte) ([]byte, error) {
 	return nil, errors.New("websocketTransport: not implemented")
 }
 
+func (t *websocketTransport) MinLatency() time.Duration {
+	return 0
+}
+
 type noopTransport struct{}
 
 func (t *noopTransport) Send(body []byte) ([]byte, error) {
 	return nil, nil
+}
+
+func (t *noopTransport) MinLatency() time.Duration {
+	return 0
 }
