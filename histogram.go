@@ -39,6 +39,17 @@ func (h *histogram) Average() float64 {
 	return h.total / float64(len(h.all))
 }
 
+func (h *histogram) Variance() float64 {
+	// Population variance
+	mean := h.Average()
+	sum := 0.0
+	for _, v := range h.all {
+		delta := v - mean
+		sum += delta * delta
+	}
+	return sum / float64(h.Len())
+}
+
 func (h *histogram) Len() int {
 	return len(h.all)
 }

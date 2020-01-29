@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"sync"
 	"time"
 
@@ -60,8 +61,12 @@ func (stats *clientStats) Render(w io.Writer) error {
 		fmt.Fprintf(w, ", %0.2f per second for errors", errAvg)
 	}
 
+	variance := stats.timing.Variance()
+	stddev := math.Sqrt(variance)
+
 	fmt.Fprintf(w, "\n")
 	fmt.Fprintf(w, "   Timing:     %0.4fs avg, %0.4fs min, %0.4fs max\n", stats.timing.Average(), stats.timing.Min(), stats.timing.Max())
+	fmt.Fprintf(w, "               %0.4fs standard deviation\n", stddev)
 
 	fmt.Fprintf(w, "\n   Percentiles:\n")
 	buckets := []int{25, 50, 75, 90, 95, 99}

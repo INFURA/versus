@@ -36,3 +36,16 @@ func TestHistogram(t *testing.T) {
 		t.Errorf("got: %0.4f; want: %0.4f", got, want)
 	}
 }
+
+func TestHistogramVariance(t *testing.T) {
+	h := histogram{}
+	h.Add(5)
+	h.Add(6)
+	h.Add(7)
+	h.Add(8)
+	h.Add(9)
+
+	if got, want := h.Variance(), 2.; got != want {
+		t.Errorf("got: %0.4f; want: %0.4f", got, want)
+	}
+}
