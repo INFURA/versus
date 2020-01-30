@@ -3,6 +3,11 @@
 Versus takes a stream of requests and runs them against multiple endpoints
 simultaneously, comparing the output and timing.
 
+## Setup
+
+[Grab a binary release](https://github.com/INFURA/versus/releases) or build from source.
+
+
 ## Usage
 
 ```
