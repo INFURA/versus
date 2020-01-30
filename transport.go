@@ -30,8 +30,9 @@ func NewTransport(endpoint string, timeout time.Duration) (Transport, error) {
 	case "http", "https":
 		url.Scheme = scheme
 		t = &httpTransport{
-			Client:   http.Client{Timeout: timeout},
-			endpoint: url.String(),
+			Client:      http.Client{Timeout: timeout},
+			endpoint:    url.String(),
+			contentType: "application/json",
 			bodyReader: func(body io.ReadCloser) ([]byte, error) {
 				defer body.Close()
 				return ioutil.ReadAll(body)
