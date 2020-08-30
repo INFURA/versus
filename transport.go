@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -137,7 +136,6 @@ type websocketTransport struct {
 func (t *websocketTransport) Send(body []byte) ([]byte, error) {
 	err := t.ws.WriteMessage(websocket.TextMessage, body)
 	if err != nil {
-		log.Print(err)
 		return nil, err
 	}
 	// TODO: A read can be done here or not, it will slow down benchmark a lot
