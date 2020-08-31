@@ -138,12 +138,11 @@ func (t *websocketTransport) Send(body []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO: A read can be done here or not, it will slow down benchmark a lot
-	// _, message, err := t.ws.ReadMessage()
-	// if err != nil {
-	// 	log.Println("read:", err)
-	// }
-	// log.Printf("recv: %s", message)
+	_, message, err := t.ws.ReadMessage()
+	_ = message
+	if err != nil {
+		return nil, err
+	}
 
 	return nil, nil
 }
