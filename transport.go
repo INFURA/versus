@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,6 +10,8 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // NewTransport creates a transport that supports the given endpoint. The
@@ -39,8 +40,13 @@ func NewTransport(endpoint string, timeout time.Duration) (Transport, error) {
 			},
 		}
 	case "ws", "wss":
-		// TODO: Implement
-		t = &websocketTransport{}
+		conn, _, err := websocket.DefaultDialer.Dial(url.String(), nil)
+		if err != nil {
+			return nil, fmt.Errorf("Got: %s when connecting to ws", err)
+		}
+		t = &websocketTransport{
+			ws: conn,
+		}
 	case "noop":
 		t = &noopTransport{}
 	default:
@@ -124,10 +130,21 @@ func (t *httpTransport) Send(body []byte) ([]byte, error) {
 }
 
 type websocketTransport struct {
+	ws *websocket.Conn
 }
 
 func (t *websocketTransport) Send(body []byte) ([]byte, error) {
-	return nil, errors.New("websocketTransport: not implemented")
+	err := t.ws.WriteMessage(websocket.TextMessage, body)
+	if err != nil {
+		return nil, err
+	}
+	_, message, err := t.ws.ReadMessage()
+	_ = message
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
 }
 
 type noopTransport struct{}
